@@ -23,6 +23,7 @@ from typing import Dict, List, Tuple
 from tqdm import tqdm
 
 SPLITS = ("train", "valid", "test")
+IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff", ".webp"}
 
 
 @dataclass
@@ -34,7 +35,11 @@ class LineParseResult:
 @dataclass
 class SplitStats:
     split: str
+    total_image_files: int = 0
     total_label_files: int = 0
+    matched_image_label_pairs: int = 0
+    images_without_label: int = 0
+    labels_without_image: int = 0
     bbox_only_files: int = 0
     segmentation_only_files: int = 0
     mixed_bbox_segmentation_files: int = 0
@@ -164,12 +169,23 @@ def analyze_split(
     stats = SplitStats(split=split)
     error_examples: List[Dict[str, str]] = []
 
+    images_dir = dataset_root / split / "images"
     labels_dir = dataset_root / split / "labels"
+    if not images_dir.exists():
+        raise FileNotFoundError(f"Lipseste folderul: {images_dir}")
     if not labels_dir.exists():
         raise FileNotFoundError(f"Lipseste folderul: {labels_dir}")
 
+    image_files = sorted([p for p in images_dir.iterdir() if p.is_file() and p.suffix.lower() in IMAGE_EXTS])
     label_files = sorted(labels_dir.glob("*.txt"))
+    image_stems = {p.stem for p in image_files}
+    label_stems = {p.stem for p in label_files}
+
+    stats.total_image_files = len(image_files)
     stats.total_label_files = len(label_files)
+    stats.matched_image_label_pairs = len(image_stems.intersection(label_stems))
+    stats.images_without_label = len(image_stems - label_stems)
+    stats.labels_without_image = len(label_stems - image_stems)
 
     for label_file in tqdm(
         label_files,
@@ -216,7 +232,11 @@ def analyze_split(
 
 def print_split_stats(stats: SplitStats) -> None:
     print(f"\n[{stats.split}]")
+    print(f"  image_files_total: {stats.total_image_files}")
     print(f"  label_files_total: {stats.total_label_files}")
+    print(f"  matched_image_label_pairs: {stats.matched_image_label_pairs}")
+    print(f"  images_without_label: {stats.images_without_label}")
+    print(f"  labels_without_image: {stats.labels_without_image}")
     print(f"  bbox_only_files: {stats.bbox_only_files}")
     print(f"  segmentation_only_files: {stats.segmentation_only_files}")
     print(f"  mixed_bbox_segmentation_files: {stats.mixed_bbox_segmentation_files}")
@@ -253,7 +273,11 @@ def main() -> None:
 
     total = SplitStats(split="TOTAL")
     for s in split_stats:
+        total.total_image_files += s.total_image_files
         total.total_label_files += s.total_label_files
+        total.matched_image_label_pairs += s.matched_image_label_pairs
+        total.images_without_label += s.images_without_label
+        total.labels_without_image += s.labels_without_image
         total.bbox_only_files += s.bbox_only_files
         total.segmentation_only_files += s.segmentation_only_files
         total.mixed_bbox_segmentation_files += s.mixed_bbox_segmentation_files
@@ -265,7 +289,11 @@ def main() -> None:
         total.invalid_lines += s.invalid_lines
 
     print("\n[TOTAL]")
+    print(f"  image_files_total: {total.total_image_files}")
     print(f"  label_files_total: {total.total_label_files}")
+    print(f"  matched_image_label_pairs: {total.matched_image_label_pairs}")
+    print(f"  images_without_label: {total.images_without_label}")
+    print(f"  labels_without_image: {total.labels_without_image}")
     print(f"  bbox_only_files: {total.bbox_only_files}")
     print(f"  segmentation_only_files: {total.segmentation_only_files}")
     print(f"  mixed_bbox_segmentation_files: {total.mixed_bbox_segmentation_files}")
